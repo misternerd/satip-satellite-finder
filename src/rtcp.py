@@ -79,6 +79,13 @@ class RtcpPacketAppSatIp:
                 self.roll_off = float(tuner_data[9])
                 self.symbol_rate = int(tuner_data[10])
                 self.fec_inner = int(tuner_data[11])
+
+                if self.signal_level < 0 or self.signal_level > 255:
+                    raise ValueError(f'Invalid SatIp APP packet, expected signal_level=0-255, got={self.signal_level}')
+
+                if self.quality < 0 or self.quality > 15:
+                    raise ValueError(f'Invalid SatIp APP packet, expected quality=0-15, got={self.quality}')
+
                 continue
             if entry.startswith('pids='):
                 self.pids = [int(x) for x in entry.replace('pids=', '').split(',')]
