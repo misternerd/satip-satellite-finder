@@ -7,6 +7,7 @@ name = "pypi"
 argparse = "*"
 requests = "*"
 pycurl = "*"
+rich = "*"
 
 [dev-packages]
 
