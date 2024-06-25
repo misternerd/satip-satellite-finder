@@ -1,6 +1,5 @@
 import sys
 import threading
-import time
 from email.message import Message
 from email.parser import BytesParser
 from threading import Thread
@@ -130,12 +129,14 @@ class RtspStream(object):
             print(f'Failed to teardown stream={self._stream_id}, got response={rtsp_response}')
             return False
 
+        print(f'Successfully tore down stream={self._stream_id}', file=sys.stderr)
         return True
 
 
 class RtspClient(object):
     _options_thread: Optional[Thread] = None
-    _running = True
+    _options_thread_stop_event = threading.Event()
+    _options_thread_sleep_cond = threading.Condition()
     _connection: RtspConnection
     _tuner_count: int
 
@@ -145,7 +146,9 @@ class RtspClient(object):
 
     def close(self):
         print('Closing RtspClient', file=sys.stderr)
-        self._running = False
+        self._options_thread_stop_event.set()
+        with self._options_thread_sleep_cond:
+            self._options_thread_sleep_cond.notify()
         if self._options_thread and self._options_thread.is_alive():
             self._options_thread.join()
             print('Options thread joined', file=sys.stderr)
@@ -162,14 +165,11 @@ class RtspClient(object):
         timeout_s -= 2
 
         def thread_wrapper():
-            last_request_sent = time.time() + timeout_s
-            while self._running:
-                if last_request_sent + timeout_s < time.time():
-                    send_options_request()
-                    last_request_sent = time.time()
-                time.sleep(1)
+            while not self._options_thread_stop_event.is_set():
+                send_options_request()
+                with self._options_thread_sleep_cond:
+                    self._options_thread_sleep_cond.wait(timeout_s)
 
-        self._running = True
         self._options_thread = threading.Thread(target=thread_wrapper)
         self._options_thread.start()
 

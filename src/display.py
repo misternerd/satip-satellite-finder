@@ -46,14 +46,18 @@ class Display:
         self._live = Live(self._layout, console=self._console, refresh_per_second=4)
         self._live.start(True)
 
+    def close(self):
+        self._live.stop()
+        self._console.clear()
+
     def update_tuner(self, tuner_index: int, level: int, snr: int):
         if tuner_index >= len(self._tuners):
             raise IndexError(f'Invalid tuner index {tuner_index}')
 
+        # this can happen during shutdown
+        if not self._live.is_started:
+            return
+
         tuner_data = self._tuners[tuner_index]
         tuner_data.level_progress.update(tuner_data.level_task, completed=level)
         tuner_data.snr_progress.update(tuner_data.snr_task, completed=snr)
-
-    def close(self):
-        self._live.stop()
-        self._console.clear()
