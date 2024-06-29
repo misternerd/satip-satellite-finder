@@ -40,14 +40,21 @@ class RtpConnection(object):
                     if sock == self._rtp_socket:
                         packet = sock.recv(4096)
                         if packet and self._rtp_callback:
-                            self._rtp_callback(packet)
+                            try:
+                                self._rtp_callback(packet)
+                            except Exception as e:
+                                log('Error in rtp callback: {e}')
                     elif sock == self._rtcp_socket:
                         packet = sock.recv(4096)
                         if packet and self._rtcp_callback:
-                            self._rtcp_callback(packet)
+                            try:
+                                self._rtcp_callback(packet)
+                            except Exception as e:
+                                log('Error in rtcp callback: {e}')
             except Exception as e:
                 log(f'Error receiving packet: {e}')
                 break
+
         log(f'Connection packet receiver thread exited')
 
     def close(self):

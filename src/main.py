@@ -109,10 +109,7 @@ def main():
     log(f'Connecting to {device_info.hostname} '
         f'({device_info.manufacturer} {device_info.model_name}, {device_info.number_of_tuners} tuners)')
 
-    display_names = [
-        f'{c.frequency}/{c.polarisation}|{c.display_name}' if c.display_name else f'{c.frequency}/{c.polarisation}'
-        for c in arg_channels]
-    display = Display(display_names)
+    display = Display()
     rtsp_clients = []
     rtsp_streams = []
     rtp_connections = []
@@ -146,13 +143,8 @@ def main():
             close_everything(display, rtsp_clients, rtsp_streams, rtp_connections)
             exit(1)
 
-        def show_signal_and_quality(packet_data):
-            app_packet = get_first_rtcp_app_packet_from_rtcp_data(packet_data)
-            level = int((app_packet.signal_level / 255) * 100)
-            snr = int((app_packet.quality / 15) * 100)
-            display.update_tuner(tuner_idx, level, snr)
-
-        rtp_connection.register_rtcp_packet_received_callback(show_signal_and_quality)
+        update_callback = display.register_tuner_return_update_callback(channel)
+        rtp_connection.register_rtcp_packet_received_callback(update_callback)
 
     display.start()
 
