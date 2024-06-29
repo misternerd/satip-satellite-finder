@@ -1,24 +1,28 @@
 import os
 import select
 import socket
-import threading
-from threading import Thread
+from threading import Event, Thread
 from typing import Optional
 
 from util import (create_logger)
 
 log = create_logger('RTP')
 
+
 class RtpConnection(object):
     _rtp_socket: socket.socket
     _rtcp_socket: socket.socket
     _receiver_thread: Thread
-    _receiver_thread_stop_event = threading.Event()
-    _receiver_thread_stop_pipe = os.pipe()
-    _rtp_callback: Optional[callable] = None
-    _rtcp_callback: Optional[callable] = None
+    _receiver_thread_stop_event: Event
+    _receiver_thread_stop_pipe: tuple[int, int]
+    _rtp_callback: Optional[callable]
+    _rtcp_callback: Optional[callable]
 
     def __init__(self, client_rtp_port: int, client_rtcp_port: int) -> None:
+        self._receiver_thread_stop_event = Event()
+        self._receiver_thread_stop_pipe = os.pipe()
+        self._rtp_callback = None
+        self._rtcp_callback = None
         self._rtp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._rtp_socket.bind(('0.0.0.0', client_rtp_port))
         self._rtcp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

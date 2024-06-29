@@ -1,12 +1,11 @@
 from dataclasses import dataclass
+from threading import Lock
 
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.progress import Progress, BarColumn, TextColumn, TaskID, TaskProgressColumn
-
-from threading import Lock
 
 
 @dataclass
@@ -18,11 +17,14 @@ class TunerData:
 
 
 class Display:
-    _lock = Lock()
-    _tuners: list[TunerData] = []
-    _console = Console()
+    _lock: Lock
+    _tuners: list[TunerData]
+    _console: Console
 
     def __init__(self, tuner_display_names: list[str]):
+        self._lock = Lock()
+        self._tuners: list[TunerData] = []
+        self._console = Console()
         rows = []
         self._layout = Layout(size=len(tuner_display_names) * 2)
         for i, display_name in enumerate(tuner_display_names):

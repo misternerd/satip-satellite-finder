@@ -1,4 +1,3 @@
-import base64
 from typing import Optional
 
 
@@ -108,7 +107,7 @@ def get_first_rtcp_app_packet_from_rtcp_data(packet: bytes) -> Optional[RtcpPack
         index += 1
         packet_type = packet[index]
         index += 1
-        length = int.from_bytes(packet[index:index+2], byteorder='big') * 4 + 4
+        length = int.from_bytes(packet[index:index + 2], byteorder='big') * 4 + 4
         index += 2
         # ignoring unused: ssrc = int.from_bytes(packet[index:index+4], byteorder='big')
         index += 4
@@ -122,7 +121,7 @@ def get_first_rtcp_app_packet_from_rtcp_data(packet: bytes) -> Optional[RtcpPack
         if packet_start + length > packet_length:
             raise ValueError(f'Invalid RTCP packet, expected length={length}, got {packet_length}')
 
-        specific_data = packet[index:index+length-4]
+        specific_data = packet[index:index + length - 4]
         index = packet_start + length
 
         # we're only interested in the APP packets, as they contain the signal & quality data
