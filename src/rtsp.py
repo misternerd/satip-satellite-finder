@@ -1,19 +1,19 @@
-import sys
-import threading
 from email.message import Message
 from email.parser import BytesParser
-from threading import Thread
+from threading import Condition, Event, Lock, Thread
 from typing import Optional
 
 import pycurl
 
 from rtp import RtpConnection
-from satip import SatipChannel
+from satip import SatIpChannel
+from util import create_logger
 
 RTSP_PREAMBLE = 'RTSP/1.0'
 RTSP_METHODS = ['DESCRIBE', 'SETUP', 'PLAY', 'PAUSE', 'TEARDOWN', 'OPTIONS', 'ANNOUNCE', 'RECORD', 'GET_PARAMETER',
                 'SET_PARAMETER', 'REDIRECT']
 
+log = create_logger('RTSP')
 
 class RtspResponse:
     _header_buffer = ''.encode('ascii')
@@ -54,12 +54,13 @@ class RtspResponse:
         return int(status_split_by_space[0])
 
     def __str__(self):
-        return f'RtspResponse(status_code={self.status_code}, headers={self.headers}, data={self.data})'
+        header_str = self.headers.__str__().replace('\n', ' ').strip()
+        return f'RtspResponse(status_code={self.status_code}, headers={header_str}, data={self.data})'
 
 
 class RtspConnection(object):
     _curl = pycurl.Curl()
-    _lock = threading.Lock()
+    _lock = Lock()
     base_uri: str
 
     def __init__(self, server_host: str, server_port: int) -> None:
@@ -85,7 +86,7 @@ class RtspConnection(object):
             return rtsp_response
 
     def close(self):
-        print('Closing RtspConnection', file=sys.stderr)
+        log('(RTSP) Closing RtspConnection')
         with self._lock:
             self._curl.close()
 
@@ -106,7 +107,7 @@ class RtspStream(object):
         self._client_rtcp_port = client_rtcp_port
 
     def play(self, pids: list[int]) -> Optional[RtpConnection]:
-        print(f'Playing stream={self._stream_id} with pids={pids}', file=sys.stderr)
+        log(f'(RTSP) Playing stream={self._stream_id} with pids={pids}')
         pids_str = ','.join(map(str, pids))
         url = f'stream={self._stream_id}?addpids={pids_str}'
         curl_extra_opts = {pycurl.OPT_RTSP_STREAM_URI: f'{self._connection.base_uri}{url}'}
@@ -114,44 +115,42 @@ class RtspStream(object):
         rtp_connection = RtpConnection(self._client_rtp_port, self._client_rtcp_port)
 
         if rtsp_response.status_code != 200:
-            print(f'Failed to play stream={self._stream_id}, got response={rtsp_response}', file=sys.stderr)
+            log(f'(RTSP) Failed to play stream={self._stream_id}, got response={rtsp_response}')
             rtp_connection.close()
             raise RuntimeError(f'Failed to play stream={self._stream_id}, got response={rtsp_response}')
 
         return rtp_connection
 
     def teardown(self) -> bool:
-        print(f'Teardown stream={self._stream_id}', file=sys.stderr)
+        log(f'(RTSP) Teardown stream={self._stream_id}')
         url = f'stream={self._stream_id}'
         rtsp_response = self._connection.perform_rtsp_request(url, pycurl.RTSPREQ_TEARDOWN)
 
         if rtsp_response.status_code != 200:
-            print(f'Failed to teardown stream={self._stream_id}, got response={rtsp_response}')
+            log(f'(RTSP) Failed to teardown stream={self._stream_id}, got response={rtsp_response}')
             return False
 
-        print(f'Successfully tore down stream={self._stream_id}', file=sys.stderr)
+        log(f'(RTSP) Successfully tore down stream={self._stream_id}')
         return True
 
 
 class RtspClient(object):
     _options_thread: Optional[Thread] = None
-    _options_thread_stop_event = threading.Event()
-    _options_thread_sleep_cond = threading.Condition()
+    _options_thread_stop_event = Event()
+    _options_thread_sleep_cond = Condition()
     _connection: RtspConnection
-    _tuner_count: int
 
-    def __init__(self, server_ip: str, server_port: int, tuner_count: int) -> None:
+    def __init__(self, server_ip: str, server_port: int,) -> None:
         self._connection = RtspConnection(server_ip, server_port)
-        self._tuner_count = tuner_count
 
     def close(self):
-        print('Closing RtspClient', file=sys.stderr)
+        log('(RTSP) Closing RtspClient')
         self._options_thread_stop_event.set()
         with self._options_thread_sleep_cond:
             self._options_thread_sleep_cond.notify()
         if self._options_thread and self._options_thread.is_alive():
             self._options_thread.join()
-            print('Options thread joined', file=sys.stderr)
+            log('Options thread joined')
         self._connection.close()
 
     def _start_options_thread(self, timeout_s):
@@ -159,7 +158,7 @@ class RtspClient(object):
             rtsp_response = self._connection.perform_rtsp_request('', pycurl.RTSPREQ_OPTIONS)
 
             if rtsp_response.status_code != 200:
-                print(f'Options request failed, got response={rtsp_response}')
+                log(f'(RTSP) Options request failed, got response={rtsp_response}')
 
         # Subtract a little time to account for setup process etc
         timeout_s -= 2
@@ -170,13 +169,11 @@ class RtspClient(object):
                 with self._options_thread_sleep_cond:
                     self._options_thread_sleep_cond.wait(timeout_s)
 
-        self._options_thread = threading.Thread(target=thread_wrapper)
+        self._options_thread = Thread(target=thread_wrapper)
         self._options_thread.start()
 
-    def setup_stream(self, channel: SatipChannel, client_rtp_port: int, client_rtcp_port: int) -> Optional[RtspStream]:
-        print(
-            f'Setting up stream with tuner_index={channel.src}, frequency={channel.frequency}, polarisation={channel.polarisation}',
-            file=sys.stderr)
+    def setup_stream(self, channel: SatIpChannel, client_rtp_port: int, client_rtcp_port: int) -> Optional[RtspStream]:
+        log(f'(RTSP) Setting up stream: tuner #{channel.frontend}, frequency={channel.frequency}/{channel.polarisation}')
         url = channel.to_stream_uri_params()
         transport = f'RTP/AVP;unicast;client_port={client_rtp_port}-{client_rtcp_port}'
         extra_curl_opts = {
@@ -186,7 +183,7 @@ class RtspClient(object):
         rtsp_response = self._connection.perform_rtsp_request(url, pycurl.RTSPREQ_SETUP, extra_curl_opts)
 
         if rtsp_response.status_code != 200:
-            print(f'Failed to setup stream for url={url}, got response={rtsp_response}', file=sys.stderr)
+            log(f'(RTSP) Failed to setup stream for url={url}, got response={rtsp_response}')
             raise ValueError(f'Failed to setup stream for url={url}, got response={rtsp_response}')
 
         stream_id = int(rtsp_response.headers['com.ses.streamID'])

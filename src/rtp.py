@@ -1,11 +1,13 @@
 import os
 import select
 import socket
-import sys
 import threading
 from threading import Thread
 from typing import Optional
 
+from util import (create_logger)
+
+log = create_logger('RTP')
 
 class RtpConnection(object):
     _rtp_socket: socket.socket
@@ -23,7 +25,7 @@ class RtpConnection(object):
         self._rtcp_socket.bind(('0.0.0.0', client_rtcp_port))
         self._receiver_thread = Thread(target=self._packet_receiver_handler)
         self._receiver_thread.start()
-        print(f'RtpConnection running, listening on {client_rtp_port}/rtp and {client_rtcp_port}/rtcp', file=sys.stderr)
+        log(f'Connection running, listening on {client_rtp_port}/rtp and {client_rtcp_port}/rtcp')
 
     def _packet_receiver_handler(self):
         socket_list = [self._rtp_socket, self._rtcp_socket, self._receiver_thread_stop_pipe[0]]
@@ -40,20 +42,18 @@ class RtpConnection(object):
                         if packet and self._rtcp_callback:
                             self._rtcp_callback(packet)
             except Exception as e:
-                print(f'Error receiving packet: {e}', file=sys.stderr)
+                log(f'Error receiving packet: {e}')
                 break
-        print(f'RtpConnection packet receiver thread exited', file=sys.stderr)
+        log(f'Connection packet receiver thread exited')
 
     def close(self):
-        print(
-            f'Closing RtpConnection on ports {self._rtp_socket.getsockname()[1]}/rtp and {self._rtcp_socket.getsockname()[1]}/rtcp',
-            file=sys.stderr)
+        log(f'Closing connection on {self._rtp_socket.getsockname()[1]}/rtp, {self._rtcp_socket.getsockname()[1]}/rtcp')
         self._receiver_thread_stop_event.set()
         os.write(self._receiver_thread_stop_pipe[1], b'0')
         self._rtp_socket.close()
         self._rtcp_socket.close()
         self._receiver_thread.join()
-        print(f'RtpConnection closed', file=sys.stderr)
+        log('RtpConnection closed')
 
     def register_rtp_packet_received_callback(self, callback: callable):
         self._rtp_callback = callback
